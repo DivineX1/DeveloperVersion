@@ -1,0 +1,514 @@
+-- =======================================================
+-- FULL COMBINED BATTLE SCRIPT (EAT THE WORLD - OPTIMIZED)
+-- =======================================================
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+-- Ensure PlayerGui is fully loaded
+local playerGui = player:FindFirstChildOfClass("PlayerGui")
+while not playerGui do
+	task.wait(0.1)
+	playerGui = player:FindFirstChildOfClass("PlayerGui")
+end
+
+-- Nuclear clear of any existing UI elements with similar names
+for _, oldGui in ipairs(playerGui:GetChildren()) do
+	if oldGui.Name == "EatAndGrabGUI" or oldGui:FindFirstChild("MainPanel") or oldGui:FindFirstChild("DevToggleButton") then
+		oldGui:Destroy()
+	end
+end
+
+-- Global state bridge variable container
+_G.EatGrabState = {
+	onlyEat = false,
+	anchorOn = false,
+	floorOn = false,
+	antiVoidOn = true,
+	aimLockOn = false,
+	tpAttackOn = false,
+	tpGrabOn = false,
+	fakeEmoteOn = false,
+	espOn = false,
+	espAllOn = false,
+	espTargets = {}, -- Table to store individual ESP targets
+	removeMapOn = false,
+	speedOn = false,
+	selectedSpeedValue = 16,
+	speedOptions = {16, 50, 100, 250, 350, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500},
+	savedRespawnCFrame = nil,
+	floorPart = nil,
+	removeMapFloorPart = nil
+}
+
+local State = _G.EatGrabState
+
+task.spawn(function()
+	local initialChar = player.Character or player.CharacterAdded:Wait()
+	local initialHrp = initialChar:WaitForChild("HumanoidRootPart", 10)
+	if initialHrp then State.savedRespawnCFrame = initialHrp.CFrame end
+end)
+
+-- Create the master ScreenGui container
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "EatAndGrabGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = true 
+screenGui.Parent = playerGui
+State.screenGui = screenGui
+
+-- Reliable Dragging Processor
+local function makeGuiDraggable(frame)
+	local dragging, dragInput, dragStart, startPos
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	frame.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			update(input)
+		end
+	end)
+end
+
+-- DEV Button
+local devButton = Instance.new("TextButton")
+devButton.Name = "DevToggleButton"
+devButton.Size = UDim2.new(0, 55, 0, 30) 
+devButton.Position = UDim2.new(0, 15, 0, 60)
+devButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+devButton.BorderSizePixel = 0
+devButton.Text = "DEV"
+devButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+devButton.TextSize = 12
+devButton.Font = Enum.Font.GothamBold
+devButton.ZIndex = 10
+devButton.Parent = screenGui
+makeGuiDraggable(devButton)
+
+local devCorner = Instance.new("UICorner", devButton) devCorner.CornerRadius = UDim.new(0, 6)
+local devStroke = Instance.new("UIStroke", devButton) devStroke.Color = Color3.fromRGB(50, 50, 50) devStroke.Thickness = 1
+
+-- Main Panel
+local innerGui = Instance.new("Frame")
+innerGui.Name = "MainPanel"
+innerGui.Size = UDim2.new(0, 140, 0, 225)
+innerGui.Position = UDim2.new(0, 15, 0, 100)
+innerGui.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+innerGui.BorderSizePixel = 0
+innerGui.Visible = true 
+innerGui.ZIndex = 2
+innerGui.Parent = screenGui
+makeGuiDraggable(innerGui)
+State.innerGui = innerGui
+
+Instance.new("UICorner", innerGui).CornerRadius = UDim.new(0, 6)
+local innerStroke = Instance.new("UIStroke", innerGui) innerStroke.Color = Color3.fromRGB(40, 40, 40) innerStroke.Thickness = 1
+
+local headerText = Instance.new("TextLabel")
+headerText.Size = UDim2.new(1, 0, 0, 28)
+headerText.Position = UDim2.new(0, 0, 0, 4)
+headerText.BackgroundTransparency = 1
+headerText.Text = "BATTLE SCRIPT"
+headerText.TextColor3 = Color3.fromRGB(255, 255, 255)
+headerText.TextSize = 11
+headerText.Font = Enum.Font.GothamBold
+headerText.ZIndex = 3
+headerText.Parent = innerGui
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, 0, 1, -36)
+scrollFrame.Position = UDim2.new(0, 0, 0, 32)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 2
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(50, 50, 50)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 470)
+scrollFrame.ZIndex = 3
+scrollFrame.Active = true 
+scrollFrame.Parent = innerGui
+State.scrollFrame = scrollFrame
+
+devButton.Activated:Connect(function()
+	innerGui.Visible = not innerGui.Visible
+end)
+
+-- Helper for closing other panels
+local function closeAllSidePanels()
+    State.sideAttackPanel.Visible = false
+    State.sideGrabPanel.Visible = false
+    State.sideSpeedPanel.Visible = false
+    State.sideFakeEmotePanel.Visible = false
+    State.sideEspPanel.Visible = false
+end
+
+-- Side Panels Setup
+local function createSidePanel(name, titleText)
+    local panel = Instance.new("Frame")
+    panel.Size = UDim2.new(0, 135, 0, 160)
+    panel.Position = UDim2.new(1, 6, 0, 0)
+    panel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    panel.ZIndex = 2
+    panel.Visible = false
+    panel.Parent = innerGui
+    
+    local title = Instance.new("TextLabel", panel)
+    title.Size = UDim2.new(1, 0, 0, 26)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 11
+    title.Font = Enum.Font.GothamBold
+    
+    local scroll = Instance.new("ScrollingFrame", panel)
+    scroll.Size = UDim2.new(1, 0, 1, -30)
+    scroll.Position = UDim2.new(0, 0, 0, 26)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 2
+    scroll.Active = true
+    return panel, scroll
+end
+
+State.sideAttackPanel, State.saScroll = createSidePanel("Attack", "TP ATTACK")
+State.sideGrabPanel, State.sgScroll = createSidePanel("Grab", "TP GRAB")
+State.sideSpeedPanel, State.ssScroll = createSidePanel("Speed", "SELECT SPEED")
+State.sideFakeEmotePanel, State.sfScroll = createSidePanel("Fake", "FAKE EMOTE")
+State.sideEspPanel, State.seScroll = createSidePanel("ESP", "ESP")
+
+-- Main functionality list configurations
+local function createButtonElement(text, position, defaultColor, parentObj)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -12, 0, 32)
+	button.Position = position
+	button.BackgroundColor3 = defaultColor
+	button.Text = text
+	button.TextColor3 = Color3.fromRGB(200, 200, 200)
+	button.TextSize = 11
+	button.Font = Enum.Font.GothamMedium
+	button.ZIndex = 4
+	button.Parent = parentObj
+	local stroke = Instance.new("UIStroke", button) stroke.Color = Color3.fromRGB(45, 45, 45)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 4)
+	return button, stroke
+end
+
+State.eatButton, State.eatStroke = createButtonElement("Only Eat : OFF", UDim2.new(0, 6, 0, 2), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.anchorButton, State.anchorStroke = createButtonElement("Unanchor : OFF", UDim2.new(0, 6, 0, 38), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.floorButton, State.floorStroke = createButtonElement("Floor : OFF", UDim2.new(0, 6, 0, 74), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.tpRespawnButton, State.tpStroke = createButtonElement("TP Respawn", UDim2.new(0, 6, 0, 110), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.setRespawnButton, State.setStroke = createButtonElement("Set Respawn", UDim2.new(0, 6, 0, 146), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.antiVoidButton, State.antiVoidStroke = createButtonElement("Anti Void : ON", UDim2.new(0, 6, 0, 182), Color3.fromRGB(27, 50, 32), scrollFrame)
+State.aimLockButton, State.aimLockStroke = createButtonElement("Aim Lock : OFF", UDim2.new(0, 6, 0, 218), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.tpAttackButton, State.tpAttackStroke = createButtonElement("TP Attack : OFF", UDim2.new(0, 6, 0, 254), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.tpGrabButton, State.tpGrabStroke = createButtonElement("TP Grab : OFF", UDim2.new(0, 6, 0, 290), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.fakeEmoteButton, State.fakeStroke = createButtonElement("Fake Emote : OFF", UDim2.new(0, 6, 0, 326), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.espButton, State.espStroke = createButtonElement("ESP : OFF", UDim2.new(0, 6, 0, 362), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.removeMapButton, State.removeMapStroke = createButtonElement("Remove Map : OFF", UDim2.new(0, 6, 0, 398), Color3.fromRGB(30, 30, 30), scrollFrame)
+State.speedButton, State.speedStroke = createButtonElement("Speed : OFF", UDim2.new(0, 6, 0, 434), Color3.fromRGB(30, 30, 30), scrollFrame)
+
+-- ESP Logic
+local function updateEspHighlights()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == player then continue end
+        local char = p.Character
+        if char then
+            local hl = char:FindFirstChild("ESPHighlight")
+            -- Check if we should show: either "ESP All" is on, or this specific player is targeted
+            if (State.espOn and State.espAllOn) or (State.espOn and State.espTargets[p.Name]) then
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "ESPHighlight"
+                    hl.FillColor = Color3.fromRGB(255, 0, 0)
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    hl.FillTransparency = 0.5
+                    hl.Parent = char
+                end
+            else
+                if hl then hl:Destroy() end
+            end
+        end
+    end
+end
+
+-- Refresh ESP List UI
+local function refreshEspList()
+    State.seScroll:ClearAllChildren()
+    local yOffset = 2
+    
+    -- ESP All Button
+    local allBtn = Instance.new("TextButton", State.seScroll)
+    allBtn.Size = UDim2.new(1, -10, 0, 24)
+    allBtn.Position = UDim2.new(0, 5, 0, yOffset)
+    allBtn.BackgroundColor3 = State.espAllOn and Color3.fromRGB(27, 50, 32) or Color3.fromRGB(28, 28, 28)
+    allBtn.Text = "ESP ALL"
+    allBtn.TextColor3 = Color3.new(1,1,1)
+    allBtn.TextSize = 10
+    Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 4)
+    allBtn.Activated:Connect(function()
+        State.espAllOn = not State.espAllOn
+        refreshEspList()
+    end)
+    yOffset = yOffset + 28
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == player then continue end
+        local isTargeted = State.espTargets[p.Name]
+        local pBtn = Instance.new("TextButton", State.seScroll)
+        pBtn.Size = UDim2.new(1, -10, 0, 24)
+        pBtn.Position = UDim2.new(0, 5, 0, yOffset)
+        pBtn.BackgroundColor3 = isTargeted and Color3.fromRGB(27, 50, 32) or Color3.fromRGB(28, 28, 28)
+        pBtn.Text = p.DisplayName
+        pBtn.TextColor3 = Color3.new(1,1,1)
+        pBtn.TextSize = 10
+        Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
+        pBtn.Activated:Connect(function()
+            State.espTargets[p.Name] = not State.espTargets[p.Name]
+            refreshEspList()
+        end)
+        yOffset = yOffset + 28
+    end
+    State.seScroll.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+-- Setup Fake Emote Options
+local emoteOptions = {"Grab", "Eat", "Throw", "Player Grab"}
+local yOffsetEmote = 2
+for _, name in ipairs(emoteOptions) do
+    local eBtn = Instance.new("TextButton")
+    eBtn.Size = UDim2.new(1, -10, 0, 24)
+    eBtn.Position = UDim2.new(0, 5, 0, yOffsetEmote)
+    eBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+    eBtn.BorderSizePixel = 0
+    eBtn.Text = name
+    eBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    eBtn.TextSize = 10
+    eBtn.Font = Enum.Font.Gotham
+    eBtn.ZIndex = 4
+    Instance.new("UICorner", eBtn).CornerRadius = UDim.new(0, 4)
+    eBtn.Activated:Connect(function()
+        local char = player.Character
+        if char and char:FindFirstChild("Events") then
+            local event = char.Events:FindFirstChild(name:gsub(" ", ""))
+            if event then event:FireServer(false, false, false) end
+        end
+    end)
+    eBtn.Parent = State.sfScroll
+    yOffsetEmote = yOffsetEmote + 28
+end
+State.sfScroll.CanvasSize = UDim2.new(0, 0, 0, yOffsetEmote)
+
+-- Logic
+local function processBatchMove(objects, targetParent)
+	local batchSize = 15
+	for i = 1, #objects, batchSize do
+		for j = i, math.min(i + batchSize - 1, #objects) do
+			local obj = objects[j]
+			if obj and obj.Parent and obj.Name ~= "RemoveMapFloor" and obj.Name ~= "MassiveDevFloor" then
+				obj.Parent = targetParent
+			end
+		end
+		RunService.Heartbeat:Wait()
+	end
+end
+
+local function getTrueGroundLevel()
+	local lowestDetectedY = nil
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and obj.Name ~= "RemoveMapFloor" and obj.Name ~= "MassiveDevFloor" then
+			local nameLower = obj.Name:lower()
+			if nameLower:find("baseplate") or nameLower:find("floor") or nameLower:find("ground") or (obj.Size.X > 150 and obj.Size.Z > 150) then
+				local topSurfaceY = obj.Position.Y + (obj.Size.Y / 2)
+				if not lowestDetectedY or topSurfaceY < lowestDetectedY then
+					lowestDetectedY = topSurfaceY
+				end
+			end
+		end
+	end
+	return lowestDetectedY or 0
+end
+
+local function runLoops()
+	local char = player.Character
+	local myHrp = char and char:FindFirstChild("HumanoidRootPart")
+	local myHum = char and char:FindFirstChild("Humanoid")
+	if not char or not myHrp then return end
+    
+    -- ESP Loop
+    if State.espOn then updateEspHighlights() 
+    else
+        -- Clean up on disable
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character then 
+                local hl = p.Character:FindFirstChild("ESPHighlight")
+                if hl then hl:Destroy() end
+            end
+        end
+    end
+
+	if State.anchorOn then for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.Anchored = false end end end
+	if State.speedOn and myHum then myHum.WalkSpeed = State.selectedSpeedValue else if myHum and myHum.WalkSpeed == State.selectedSpeedValue and not State.speedOn then myHum.WalkSpeed = 16 end end
+	if State.onlyEat and char:FindFirstChild("Events") then
+		local eatEvent = char.Events:FindFirstChild("Eat") if eatEvent then eatEvent:FireServer(false, false, false) end
+		local grabEvent = char.Events:FindFirstChild("Grab") if grabEvent then grabEvent:FireServer(false, false, false) end
+	end
+	if State.antiVoidOn and State.savedRespawnCFrame then
+		if myHrp.Position.Y < -30 then myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) myHrp.CFrame = State.savedRespawnCFrame end
+	end
+end
+
+local function executeInstantAttack(targetPlayer)
+	local char = player.Character local myHrp = char and char:FindFirstChild("HumanoidRootPart") if not myHrp then return end
+	local targetChar = targetPlayer.Character local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart") if not targetHrp then return end
+	local originalPosition = myHrp.CFrame
+	myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) myHrp.CFrame = targetHrp.CFrame
+	task.wait(0.06)
+	if char:FindFirstChild("Events") then local attackEvent = char.Events:FindFirstChild("Eat") or char.Events:FindFirstChild("Attack") if attackEvent then attackEvent:FireServer(false, false, false) end end
+	task.wait(0.12)
+	myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) myHrp.CFrame = originalPosition
+end
+
+local function executeInstantGrab(targetPlayer)
+	local char = player.Character local myHrp = char and char:FindFirstChild("HumanoidRootPart") if not myHrp then return end
+	local targetChar = targetPlayer.Character local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart") if not targetHrp then return end
+	local originalPosition = myHrp.CFrame
+	myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) myHrp.CFrame = targetHrp.CFrame
+	task.wait(0.06)
+	if char:FindFirstChild("Events") then local grabEvent = char.Events:FindFirstChild("Grab") if grabEvent then grabEvent:FireServer(false, false, false) end end
+	task.wait(0.12)
+	myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) myHrp.CFrame = originalPosition
+end
+
+local function runAimLockLoop()
+	if not State.aimLockOn then return end
+	local char = player.Character local hrp = char and char:FindFirstChild("HumanoidRootPart") local hum = char and char:FindFirstChild("Humanoid")
+	if hrp and hum and hum.Health > 0 then local camLook = camera.CFrame.LookVector hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(hrp.Position.X + camLook.X, hrp.Position.Y, hrp.Position.Z + camLook.Z)) end
+end
+
+local function updatePlayerLists()
+	State.saScroll:ClearAllChildren() State.sgScroll:ClearAllChildren()
+	local currentPlayers = Players:GetPlayers() local yOffsetAttack, yOffsetGrab = 2, 2
+	for _, p in ipairs(currentPlayers) do
+		if p ~= player then
+			local aBtn = Instance.new("TextButton") aBtn.Size = UDim2.new(1, -10, 0, 24) aBtn.Position = UDim2.new(0, 5, 0, yOffsetAttack) aBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28) aBtn.BorderSizePixel = 0 aBtn.Text = p.DisplayName aBtn.TextColor3 = Color3.fromRGB(200, 200, 200) aBtn.TextSize = 10 aBtn.Font = Enum.Font.Gotham aBtn.ZIndex = 4 Instance.new("UICorner", aBtn).CornerRadius = UDim.new(0, 4) aBtn.Activated:Connect(function() executeInstantAttack(p) end) aBtn.Parent = State.saScroll yOffsetAttack = yOffsetAttack + 28
+			local gBtn = Instance.new("TextButton") gBtn.Size = UDim2.new(1, -10, 0, 24) gBtn.Position = UDim2.new(0, 5, 0, yOffsetGrab) gBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28) gBtn.BorderSizePixel = 0 gBtn.Text = p.DisplayName gBtn.TextColor3 = Color3.fromRGB(200, 200, 200) gBtn.TextSize = 10 gBtn.Font = Enum.Font.Gotham gBtn.ZIndex = 4 Instance.new("UICorner", gBtn).CornerRadius = UDim.new(0, 4) gBtn.Activated:Connect(function() executeInstantGrab(p) end) gBtn.Parent = State.sgScroll yOffsetGrab = yOffsetGrab + 28
+		end
+	end
+	local maxListHeight = 114 
+    local attackListHeight = math.min(yOffsetAttack, maxListHeight) 
+    local grabListHeight = math.min(yOffsetGrab, maxListHeight)
+	State.sideAttackPanel.Size = UDim2.new(0, 135, 0, 26 + attackListHeight) State.saScroll.Size = UDim2.new(1, 0, 0, attackListHeight) State.saScroll.CanvasSize = UDim2.new(0, 0, 0, yOffsetAttack)
+	State.sideGrabPanel.Size = UDim2.new(0, 135, 0, 26 + grabListHeight) State.sgScroll.Size = UDim2.new(1, 0, 0, grabListHeight) State.sgScroll.CanvasSize = UDim2.new(0, 0, 0, yOffsetGrab)
+end
+
+local function refreshSpeedButtonDisplay()
+	if State.speedOn then State.speedButton.Text = "Speed: ON (" .. tostring(State.selectedSpeedValue) .. ")" State.speedButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.speedStroke.Color = Color3.fromRGB(40, 90, 50) else State.speedButton.Text = "Speed: OFF" State.speedButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.speedStroke.Color = Color3.fromRGB(45, 45, 45) end
+end
+
+-- Button Connections
+State.removeMapButton.Activated:Connect(function()
+	State.removeMapOn = not State.removeMapOn
+	if State.removeMapOn then
+		State.removeMapButton.Text = "Remove Map : ON"
+		State.removeMapButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32)
+		State.removeMapStroke.Color = Color3.fromRGB(40, 90, 50)
+		
+		if not State.removeMapFloorPart or not State.removeMapFloorPart.Parent then
+			State.removeMapFloorPart = Instance.new("Part")
+			State.removeMapFloorPart.Name = "RemoveMapFloor"
+			State.removeMapFloorPart.Size = Vector3.new(100005185, 5, 100005185)
+			State.removeMapFloorPart.Color = Color3.fromRGB(0, 0, 0)
+			State.removeMapFloorPart.Anchored = true
+			State.removeMapFloorPart.Material = Enum.Material.SmoothPlastic
+			local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			local verifiedGroundHeight = getTrueGroundLevel()
+			if hrp then State.removeMapFloorPart.CFrame = CFrame.new(hrp.Position.X, verifiedGroundHeight - 2.5, hrp.Position.Z) else State.removeMapFloorPart.CFrame = CFrame.new(0, verifiedGroundHeight - 2.5, 0) end
+			State.removeMapFloorPart.Parent = Workspace
+		end
+		
+		task.spawn(function()
+			local storage = Lighting:FindFirstChild("LocalMapStorage") or Instance.new("Folder", Lighting)
+			storage.Name = "LocalMapStorage"
+			local itemsToMove = {}
+			for _, obj in ipairs(Workspace:GetChildren()) do
+				if obj ~= camera and not Players:GetPlayerFromCharacter(obj) and obj.Name ~= "Terrain" and obj.Name ~= "RemoveMapFloor" and obj.Name ~= "MassiveDevFloor" and obj ~= storage then
+					table.insert(itemsToMove, obj)
+				end
+			end
+			processBatchMove(itemsToMove, storage)
+		end)
+	else
+		State.removeMapButton.Text = "Remove Map : OFF"
+		State.removeMapButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		State.removeMapStroke.Color = Color3.fromRGB(45, 45, 45)
+		if State.removeMapFloorPart then State.removeMapFloorPart:Destroy() State.removeMapFloorPart = nil end
+		task.spawn(function()
+			local storage = Lighting:FindFirstChild("LocalMapStorage")
+			if storage then
+				local itemsToReturn = storage:GetChildren()
+				processBatchMove(itemsToReturn, Workspace)
+				storage:Destroy()
+			end
+		end)
+	end
+end)
+
+-- Standard Toggles
+State.eatButton.Activated:Connect(function() State.onlyEat = not State.onlyEat if State.onlyEat then State.eatButton.Text = "Only Eat : ON" State.eatButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.eatStroke.Color = Color3.fromRGB(40, 90, 50) else State.eatButton.Text = "Only Eat : OFF" State.eatButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.eatStroke.Color = Color3.fromRGB(45, 45, 45) end end)
+State.anchorButton.Activated:Connect(function() State.anchorOn = not State.anchorOn if State.anchorOn then State.anchorButton.Text = "Unanchor : ON" State.anchorButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.anchorStroke.Color = Color3.fromRGB(40, 90, 50) else State.anchorButton.Text = "Unanchor : OFF" State.anchorButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.anchorStroke.Color = Color3.fromRGB(45, 45, 45) end end)
+State.floorButton.Activated:Connect(function() 
+    State.floorOn = not State.floorOn 
+    if State.floorOn then 
+        State.floorButton.Text = "Floor : ON" State.floorButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.floorStroke.Color = Color3.fromRGB(40, 90, 50) 
+        if not State.floorPart or not State.floorPart.Parent then State.floorPart = Instance.new("Part") State.floorPart.Name = "MassiveDevFloor" State.floorPart.Size = Vector3.new(5125800, 5, 5125800) State.floorPart.Anchored = true State.floorPart.Material = Enum.Material.SmoothPlastic State.floorPart.Transparency = 1 local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") local verifiedGroundHeight = getTrueGroundLevel() if hrp then State.floorPart.CFrame = CFrame.new(hrp.Position.X, verifiedGroundHeight - 2.5, hrp.Position.Z) else State.floorPart.CFrame = CFrame.new(0, verifiedGroundHeight - 2.5, 0) end State.floorPart.Parent = Workspace end
+    else 
+        State.floorButton.Text = "Floor : OFF" State.floorButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.floorStroke.Color = Color3.fromRGB(45, 45, 45) if State.floorPart then State.floorPart:Destroy() State.floorPart = nil end 
+    end 
+end)
+
+State.tpRespawnButton.Activated:Connect(function() local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") if hrp and State.savedRespawnCFrame then hrp.CFrame = State.savedRespawnCFrame end end)
+State.setRespawnButton.Activated:Connect(function() local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart") if hrp then State.savedRespawnCFrame = hrp.CFrame end end)
+State.antiVoidButton.Activated:Connect(function() State.antiVoidOn = not State.antiVoidOn if State.antiVoidOn then State.antiVoidButton.Text = "Anti Void : ON" State.antiVoidButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.antiVoidStroke.Color = Color3.fromRGB(40, 90, 50) else State.antiVoidButton.Text = "Anti Void : OFF" State.antiVoidButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.antiVoidStroke.Color = Color3.fromRGB(45, 45, 45) end end)
+State.aimLockButton.Activated:Connect(function() State.aimLockOn = not State.aimLockOn if State.aimLockOn then State.aimLockButton.Text = "Aim Lock : ON" State.aimLockButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.aimLockStroke.Color = Color3.fromRGB(40, 90, 50) else State.aimLockButton.Text = "Aim Lock : OFF" State.aimLockButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.aimLockStroke.Color = Color3.fromRGB(45, 45, 45) end end)
+
+State.tpAttackButton.Activated:Connect(function() closeAllSidePanels() State.tpAttackOn = not State.tpAttackOn State.sideAttackPanel.Visible = State.tpAttackOn if State.tpAttackOn then State.tpAttackButton.Text = "TP Attack : ON" State.tpAttackButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.tpAttackStroke.Color = Color3.fromRGB(40, 90, 50) else State.tpAttackButton.Text = "TP Attack : OFF" State.tpAttackButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.tpAttackStroke.Color = Color3.fromRGB(45, 45, 45) end updatePlayerLists() end)
+State.tpGrabButton.Activated:Connect(function() closeAllSidePanels() State.tpGrabOn = not State.tpGrabOn State.sideGrabPanel.Visible = State.tpGrabOn if State.tpGrabOn then State.tpGrabButton.Text = "TP Grab : ON" State.tpGrabButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.tpGrabStroke.Color = Color3.fromRGB(40, 90, 50) else State.tpGrabButton.Text = "TP Grab : OFF" State.tpGrabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.tpGrabStroke.Color = Color3.fromRGB(45, 45, 45) end updatePlayerLists() end)
+State.fakeEmoteButton.Activated:Connect(function() closeAllSidePanels() State.fakeEmoteOn = not State.fakeEmoteOn State.sideFakeEmotePanel.Visible = State.fakeEmoteOn if State.fakeEmoteOn then State.fakeEmoteButton.Text = "Fake Emote : ON" State.fakeEmoteButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.fakeStroke.Color = Color3.fromRGB(40, 90, 50) else State.fakeEmoteButton.Text = "Fake Emote : OFF" State.fakeEmoteButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.fakeStroke.Color = Color3.fromRGB(45, 45, 45) end end)
+State.espButton.Activated:Connect(function() closeAllSidePanels() State.espOn = not State.espOn State.sideEspPanel.Visible = State.espOn if State.espOn then State.espButton.Text = "ESP : ON" State.espButton.BackgroundColor3 = Color3.fromRGB(27, 50, 32) State.espStroke.Color = Color3.fromRGB(40, 90, 50) else State.espButton.Text = "ESP : OFF" State.espButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30) State.espStroke.Color = Color3.fromRGB(45, 45, 45) end refreshEspList() end)
+State.speedButton.Activated:Connect(function() closeAllSidePanels() State.sideSpeedPanel.Visible = not State.sideSpeedPanel.Visible end)
+
+local yOffsetSpeed = 2
+for _, value in ipairs(State.speedOptions) do
+	local sBtn = Instance.new("TextButton") sBtn.Size = UDim2.new(1, -10, 0, 24) sBtn.Position = UDim2.new(0, 5, 0, yOffsetSpeed) sBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28) sBtn.BorderSizePixel = 0 sBtn.Text = (value == 16) and "Default (16)" or tostring(value) sBtn.TextColor3 = Color3.fromRGB(200, 200, 200) sBtn.TextSize = 10 sBtn.Font = Enum.Font.Gotham sBtn.ZIndex = 4 Instance.new("UICorner", sBtn).CornerRadius = UDim.new(0, 4) sBtn.Activated:Connect(function() State.selectedSpeedValue = value State.speedOn = (value ~= 16) refreshSpeedButtonDisplay() end) sBtn.Parent = State.ssScroll yOffsetSpeed = yOffsetSpeed + 28
+end
+State.ssScroll.CanvasSize = UDim2.new(0, 0, 0, yOffsetSpeed)
+
+Players.PlayerAdded:Connect(updatePlayerLists)
+Players.PlayerRemoving:Connect(updatePlayerLists)
+RunService.Heartbeat:Connect(runLoops)
+RunService.RenderStepped:Connect(runAimLockLoop)
+updatePlayerLists()
+refreshSpeedButtonDisplay()
+print("Eat the World Ground Level Matrix Configuration verified.")
